@@ -29,12 +29,15 @@
  *
  */
 
+#define CV_MINOR_VERSION 2
+
 #include <assert.h>
 #include <sys/time.h>
 #include <unistd.h>
 
 #include <ros/ros.h>
 #include <tf/transform_datatypes.h>
+#include <tf/tfMessage.h>
 #include <tf2/LinearMath/Transform.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_broadcaster.h>
@@ -74,6 +77,7 @@ class FiducialsNode {
     ros::Subscriber ignore_sub;
     image_transport::ImageTransport it;
     image_transport::Subscriber img_sub;
+    ros::Publisher tf_pub_;
     tf2_ros::TransformBroadcaster broadcaster;
 
     ros::ServiceServer service_enable_detections;
@@ -316,6 +320,8 @@ void FiducialsNode::camInfoCallback(const sensor_msgs::CameraInfo::ConstPtr& msg
 }
 
 void FiducialsNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
+    tf::tfMessage tf_msg;
+
     if (enable_detections == false) {
         return; //return without doing anything
     }
@@ -429,15 +435,27 @@ void FiducialsNode::imageCallback(const sensor_msgs::ImageConstPtr & msg) {
 
                 // Publish tf for the fiducial relative to the camera
                 if (publishFiducialTf) {
-                    geometry_msgs::TransformStamped ts;
-                    ts.transform = ft.transform;
-                    ts.header.frame_id = frameId;
-                    ts.header.stamp = msg->header.stamp;
-                    ts.child_frame_id = "fiducial_" + std::to_string(ft.fiducial_id);
-                    broadcaster.sendTransform(ts);
+
+//                    geometry_msgs::TransformStamped ts;
+//                    ts.transform = ft.transform;
+//                    ts.header.frame_id = frameId;
+//                    ts.header.stamp = msg->header.stamp;
+//                    ts.child_frame_id = "fiducial_" + std::to_string(ft.fiducial_id);
+//                    broadcaster.sendTransform(ts);
+                    geometry_msgs::TransformStamped transformStamped;
+                    transformStamped.header.frame_id = frameId;
+                    transformStamped.header.stamp = msg->header.stamp;
+                    transformStamped.child_frame_id = "fiducial_" + std::to_string(ft.fiducial_id);
+                    transformStamped.transform = ft.transform;
+                    tf_msg.transforms.push_back(transformStamped);
                 }
             }
             pose_pub->publish(fta);
+        }
+
+        if(tf_msg.transforms.size() > 0)
+        {
+          tf_pub_.publish(tf_msg);
         }
 
         if (publish_images) {
@@ -576,6 +594,8 @@ FiducialsNode::FiducialsNode() : nh(), pnh("~"), it(nh)
     vertices_pub = new ros::Publisher(nh.advertise<fiducial_msgs::FiducialArray>("fiducial_vertices", 1));
 
     pose_pub = new ros::Publisher(nh.advertise<fiducial_msgs::FiducialTransformArray>("fiducial_transforms", 1));
+
+    tf_pub_ = nh.advertise<tf::tfMessage>("/tf", 1);
 
     dictionary = aruco::getPredefinedDictionary(dicno);
 
